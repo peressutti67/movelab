@@ -46,7 +46,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .count{position:absolute;inset:0;display:grid;place-items:center;font:700 min(40vw,220px) var(--f-num);color:#fff;text-shadow:0 4px 30px rgba(0,0,0,.6);pointer-events:none}
 .toast{position:absolute;left:50%;top:calc(152px + env(safe-area-inset-top,0px));z-index:7;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:14px;max-width:calc(100% - 24px);text-align:center}
 .toast.warn{border-color:var(--warn)} .toast.bad{border-color:var(--bad)}
-.loading{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--muted)}
+.loading{position:absolute;inset:0;z-index:2;display:grid;place-items:center;text-align:center;padding:24px;color:var(--fg);font-size:17px;background:rgba(5,8,11,.72)}
 
 /* cruscotto */
 .dash{position:absolute;left:0;right:0;bottom:0;z-index:5;background:rgba(21,28,35,.72);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);padding:10px max(12px,env(safe-area-inset-right,0px)) calc(54px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));display:grid;gap:8px}
@@ -115,7 +115,33 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:12px;height:3px;vertical-align:middle;margin-right:5px}
 
+.app.sending .dash,.app.sending .actions,.app.sending #btnDash,.app.sending #chipFps{display:none}
+.code{font:700 clamp(48px,9vw,96px) var(--f-num);letter-spacing:.12em;color:var(--fg);margin:8px 0}
+@media (min-width:900px) and (orientation:landscape){
+  .stage{right:400px}
+  .stage video,.stage canvas{object-fit:contain}
+  .top{right:400px}
+  .actions{right:416px;left:auto;width:360px}
+  .dash{left:auto;right:0;top:0;width:400px;align-content:start;background:var(--panel);padding:calc(16px + env(safe-area-inset-top,0px)) 16px 16px;gap:12px;overflow:auto}
+  .dash .row{flex-direction:column}
+  .reps .n{font-size:84px}
+  .tiles{grid-template-columns:1fr 1fr;gap:10px}
+  .tile{padding:10px 12px}
+  .tile .v{font-size:46px}
+  .tile .v small{font-size:18px}
+  .lbl{font-size:12px}
+  .bars{grid-template-columns:1fr}
+  .barhead span:last-child{font-size:18px}
+  .track{height:16px}
+  .spark{height:110px}
+  .guide{font-size:20px;padding:12px 18px}
+  .toast{font-size:20px}
+}
 @media (max-width:430px){
+  #chipFps{display:none}
+  .top{gap:6px}
+  .chip{font-size:11px;padding:3px 6px}
+  .brand{font-size:14px}
   .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
   .tile .v{font-size:21px}
   .sum{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -176,6 +202,17 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
     <h2 id="setTitle">Impostazione sessione</h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
+    <div class="field"><span class="lbl">Questo dispositivo</span>
+      <div class="seg" id="segRole">
+        <button type="button" data-r="local" aria-pressed="true">Analizza qui</button>
+        <button type="button" data-r="send" aria-pressed="false">Camera per il Mac</button>
+        <button type="button" data-r="monitor" aria-pressed="false">Mac: ricevi iPhone</button>
+      </div>
+    </div>
+    <div class="field" id="fieldCode" hidden><label for="inCode">Codice mostrato sul Mac</label>
+      <input type="number" id="inCode" inputmode="numeric" placeholder="es. 4821">
+    </div>
+    <p class="note" id="roleNote" hidden></p>
     <div class="field"><span class="lbl">Vista</span>
       <div class="seg" id="segView">
         <button type="button" data-v="lateral" aria-pressed="true">Laterale (sagittale)</button>
@@ -247,6 +284,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script type="module">
 import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
@@ -254,9 +292,10 @@ const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
 
 /* ---------------- impostazioni ---------------- */
-const DEF = { view:"lateral", ex:"squat", src:"rear", height:"", cd:5, valg:10, shift:10, model:"full", voice:true, auto:true };
+const DEF = { view:"lateral", ex:"squat", src:"rear", height:"", cd:5, valg:10, shift:10, model:"full", voice:true, auto:true, role:"local", code:"", monCode:"" };
 let S = { ...DEF };
 try { Object.assign(S, JSON.parse(localStorage.getItem("movelab.settings")||"{}")); } catch(e){}
+const isFile = () => S.role==="local" && S.src==="file";
 const saveS = () => { try { localStorage.setItem("movelab.settings", JSON.stringify(S)); } catch(e){} };
 
 const EX = {
@@ -332,9 +371,11 @@ async function loadModel(){
 
 async function startSource(){
   if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  closePeer();
+  if (S.role === "monitor"){ video.srcObject = null; lastTs = -1; resetFilters(); base = null; setPhase("setup"); startReceiver(); return; }
   video.srcObject = null; video.removeAttribute("src");
   lastTs = -1; resetFilters(); base = null; setPhase("setup");
-  if (S.src === "file"){
+  if (isFile()){
     mirror = false; video.classList.remove("mirror");
     $("loading").hidden = false; $("loading").textContent = "Scegli un video dalla galleria (Imposta → Sorgente).";
     $("fileIn").click(); return;
@@ -346,7 +387,7 @@ async function startSource(){
   }
   try{
     stream = await navigator.mediaDevices.getUserMedia({ audio:false,
-      video:{ facingMode: S.src==="front" ? "user" : "environment", width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:60} } });
+      video:{ facingMode: S.src==="front" ? "user" : "environment", width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} } });
   } catch(e){
     $("loading").hidden = false; $("loading").textContent = "Accesso alla camera negato o non disponibile: " + e.message; return;
   }
@@ -363,13 +404,120 @@ $("fileIn").addEventListener("change", e => {
   lastTs = -1; resetFilters();
 });
 
+/* ---------------- collegamento iPhone -> Mac (WebRTC, peer-to-peer) ---------------- */
+let peer = null, conn = null, call = null, lastStatus = 0, idRetry = 0, sendRetry = null;
+const PEER_PREFIX = "movelab-pr67-";
+const newCode = () => String(1000 + Math.floor(Math.random()*9000));
+function closePeer(){ try{ call?.close(); conn?.close(); peer?.destroy(); }catch(e){} peer = conn = call = null; clearTimeout(sendRetry); }
+function loadingHTML(h){ const l = $("loading"); l.hidden = false; l.innerHTML = h; }
+
+function waitingScreen(){
+  loadingHTML(`<div><div>Sull'iPhone apri MoveLab → <b>Imposta</b> → <b>Camera per il Mac</b><br>e inserisci questo codice:</div><div class="code">${S.monCode}</div><div>In attesa dell'iPhone… (stessa rete Wi-Fi)</div></div>`);
+}
+function startReceiver(){
+  if (!window.Peer){ loadingHTML("Libreria di collegamento non caricata: controlla la connessione e ricarica la pagina."); return; }
+  if (!S.monCode){ S.monCode = newCode(); saveS(); }
+  mirror = false; video.classList.remove("mirror");
+  $("chipState").textContent = "ATTESA iPHONE";
+  waitingScreen();
+  peer = new Peer(PEER_PREFIX + S.monCode);
+  peer.on("open", () => { idRetry = 0; });
+  peer.on("error", e => {
+    if (e.type === "unavailable-id"){
+      // il codice è ancora occupato da una sessione precedente: riprova, poi cambia codice
+      closePeer();
+      if (++idRetry > 3){ S.monCode = newCode(); saveS(); idRetry = 0; }
+      setTimeout(startReceiver, 3000);
+    } else if (e.type === "network" || e.type === "server-error" || e.type === "socket-error"){
+      loadingHTML(`<div>Codice per l'iPhone:<div class="code">${S.monCode}</div>Servizio di collegamento non raggiungibile: controlla internet. Riprovo tra 5 secondi…</div>`);
+      closePeer(); setTimeout(startReceiver, 5000);
+    }
+  });
+  peer.on("call", c => {
+    call = c; c.answer();
+    c.on("stream", st => {
+      video.srcObject = st; video.play().catch(()=>{});
+      $("loading").hidden = true; lastTs = -1; resetFilters(); base = null; setPhase("setup");
+      toast("iPhone collegato", ""); if (S.voice) say("iPhone collegato");
+      if (!running){ running = true; loop(); }
+    });
+    c.on("close", lostPhone);
+  });
+  peer.on("connection", c => { conn = c; c.on("close", lostPhone); });
+}
+function lostPhone(){
+  if (S.role !== "monitor") return;
+  conn = null; call = null; video.srcObject = null; pts = null; ctx.clearRect(0,0,W,H);
+  if (phase === "rec") stopRec();
+  setPhase("setup"); waitingScreen(); $("chipState").textContent = "ATTESA iPHONE";
+}
+function sendStatus(){
+  if (!conn || !conn.open) return;
+  const now = performance.now(); if (now - lastStatus < 250) return; lastStatus = now;
+  try{
+    conn.send({ ph: phase, g: curGuide.t, gc: curGuide.c, n: rec?.reps.length ?? 0,
+      s: $("hudS").textContent, sw: $("hudS").className.includes("warn"),
+      cd: $("count").hidden ? "" : $("count").textContent, hold: $("hold").style.borderWidth || "0" });
+  }catch(e){}
+}
+
+/* iPhone in modalità "Camera per il Mac": solo ripresa e trasmissione */
+async function startSender(){
+  document.querySelector(".app").classList.add("sending");
+  running = false; closePeer();
+  if (stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+  ctx.clearRect(0,0,canvas.width,canvas.height); guide(null); $("hud").hidden = true;
+  $("chipView").textContent = "CAMERA → MAC"; $("chipState").textContent = "COLLEGO"; $("chipState").className = "chip warn";
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:false,
+      video:{ facingMode: S.src==="front" ? "user" : "environment", width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} } });
+  } catch(e){ loadingHTML("Accesso alla camera negato o non disponibile: " + e.message); return; }
+  mirror = S.src === "front"; video.classList.toggle("mirror", mirror);
+  video.srcObject = stream; await video.play().catch(()=>{});
+  keepAwake();
+  connectToMac();
+}
+let gen = 0;
+function connectToMac(){
+  closePeer(); const my = ++gen;
+  if (!/^\d{4}$/.test(S.code)){ loadingHTML("Inserisci in <b>Imposta</b> il codice di 4 cifre che vedi sul Mac."); return; }
+  if (!window.Peer){ loadingHTML("Libreria di collegamento non caricata: controlla la connessione e ricarica la pagina."); return; }
+  loadingHTML(`Collegamento al Mac (codice ${S.code})…`);
+  const target = PEER_PREFIX + S.code;
+  const retry = msg => { if (my !== gen || S.role !== "send") return; gen++; loadingHTML(msg); closePeer(); sendRetry = setTimeout(connectToMac, 4000); };
+  peer = new Peer();
+  peer.on("open", () => {
+    conn = peer.connect(target);
+    conn.on("open", () => {
+      call = peer.call(target, stream);
+      $("loading").hidden = true; $("chipState").textContent = "COLLEGATO"; $("chipState").className = "chip ok";
+      toast("Collegato al Mac: guarda lo schermo del Mac", "");
+    });
+    conn.on("data", applyStatus);
+    conn.on("close", () => retry("Collegamento con il Mac interrotto. Riprovo…"));
+  });
+  peer.on("error", e => {
+    if (e.type === "peer-unavailable") retry(`Mac non trovato con il codice ${S.code}. Sul Mac apri MoveLab in modalità <b>Mac: ricevi iPhone</b>. Riprovo…`);
+    else retry("Errore di collegamento (" + e.type + "). Riprovo…");
+  });
+}
+function applyStatus(st){
+  if (!st) return;
+  const map = { setup:["INQUADRA","warn"], calib:["CALIBRO","warn"], ready:["PRONTO","ok"], countdown:["VIA TRA…","warn"], rec:["REC","rec"] };
+  const [t,c] = map[st.ph] || ["COLLEGATO","ok"]; $("chipState").textContent = t; $("chipState").className = "chip " + c;
+  guide(st.g, st.gc);
+  const cnt = $("count"); cnt.hidden = !st.cd; cnt.textContent = st.cd || "";
+  $("hud").hidden = st.ph !== "rec"; $("hudN").textContent = st.n; $("hudS").textContent = st.s || ""; $("hudS").className = "s" + (st.sw ? " warn" : "");
+  $("hold").style.borderWidth = st.hold;
+}
+
 /* ---------------- ciclo principale ---------------- */
 function loop(){
   if (!running) return;
   requestAnimationFrame(loop);
-  if (!landmarker || video.readyState < 2 || video.paused && S.src==="file") { drawIdle(); return; }
+  if (!landmarker || video.readyState < 2 || video.paused && isFile()) { drawIdle(); return; }
   if (video.videoWidth !== W || video.videoHeight !== H){ W = video.videoWidth; H = video.videoHeight; canvas.width = W; canvas.height = H; }
-  let ts = S.src==="file" ? video.currentTime*1000 : performance.now();
+  let ts = isFile() ? video.currentTime*1000 : performance.now();
   if (ts <= lastTs) return;
   lastTs = ts;
   let res; try { res = landmarker.detectForVideo(video, ts); } catch(e){ return; }
@@ -379,6 +527,7 @@ function loop(){
   pts = lm.map((p,i) => ({ x: filters[i][0].f(p.x*W, ts), y: filters[i][1].f(p.y*H, ts), v: p.visibility ?? 1 }));
   process(ts);
   draw();
+  sendStatus();
 }
 
 function drawIdle(){ /* niente da disegnare */ }
@@ -386,7 +535,9 @@ function drawIdle(){ /* niente da disegnare */ }
 /* ---------------- controlli di inquadratura ---------------- */
 function visibleBox(){
   const st = $("stage"), cw = st.clientWidth, ch = st.clientHeight;
-  const sc = Math.max(cw/W, ch/H), vw = cw/sc, vh = ch/sc;
+  const fit = getComputedStyle(video).objectFit;
+  const sc = fit === "contain" ? Math.min(cw/W, ch/H) : Math.max(cw/W, ch/H);
+  const vw = Math.min(W, cw/sc), vh = Math.min(H, ch/sc);
   return { x0:(W-vw)/2, y0:(H-vh)/2, x1:(W+vw)/2, y1:(H+vh)/2, w:vw, h:vh };
 }
 function framingIssues(){
@@ -404,7 +555,7 @@ function framingIssues(){
   if (fr > 0.80) issues.push("Allontana il telefono (serve spazio sopra la testa per le braccia)");
   const torso = dist(mid(pts[11],pts[12]), mid(pts[23],pts[24])) || 1;
   const shSep = Math.abs(pts[11].x - pts[12].x)/torso;
-  if (S.view==="lateral" && shSep > 0.35) issues.push("Atleta non di profilo: ruotalo di 90°");
+  if (S.view==="lateral" && shSep > 0.5) issues.push("Atleta non di profilo: ruotalo di 90°");
   if (S.view==="frontal" && shSep < 0.5) issues.push("Atleta non frontale: ruotalo verso la camera");
   return issues;
 }
@@ -473,7 +624,8 @@ function setPhase(ph){
   $("hud").hidden = !(ph==="rec");
 }
 
-function guide(text, cls){ const g=$("guide"); if(!text){ g.hidden=true; return; } g.hidden=false; g.textContent=text; g.className="guide "+(cls||""); }
+let curGuide = { t:"", c:"" };
+function guide(text, cls){ curGuide = { t:text||"", c:cls||"" }; const g=$("guide"); if(!text){ g.hidden=true; return; } g.hidden=false; g.textContent=text; g.className="guide "+(cls||""); }
 
 function onNoPose(){ if (phase==="setup"||phase==="calib") guide("Nessuna persona rilevata", "warn"); }
 
@@ -649,7 +801,9 @@ function buildTiles(){
   $("bar2Center").hidden = !sym; $("bar2Dot").hidden = !sym; $("bar2Fill").hidden = sym;
 }
 
+let uiT = 0;
 function updateLive(m, t){
+  const nowUi = performance.now(); if (nowUi - uiT < 100) return; uiT = nowUi;
   for (const [k,,u] of tilesFor(S.view)){
     const el = $("t_"+k); if (!el) continue; const v = m?.[k];
     el.querySelector(".v").innerHTML = Number.isFinite(v) ? `${v.toFixed(0)}<small>${u}</small>` : "--";
@@ -763,8 +917,8 @@ function startCountdown(){
     n--; if (n > 0){ c.textContent = n; beep(660,.08); return; }
     clearInterval(iv); c.hidden = true; beep(990,.2);
     rec = { t0: performance.now(), frames: [], reps: [], state:"up", cur:null, view:S.view, ex:S.ex, side:base.side, height:S.height };
-    if (S.src==="file") rec.t0 = video.currentTime*1000;
-    rec.tStart = S.src==="file" ? video.currentTime*1000 : performance.now();
+    if (isFile()) rec.t0 = video.currentTime*1000;
+    rec.tStart = isFile() ? video.currentTime*1000 : performance.now();
     if (lastM && Math.abs(lastM.v) < 0.1) base.hipY0 = lastM.hipY;   // nuova baseline: atleta in piedi al via
     $("repN").textContent = "0"; $("hudN").textContent = "0"; $("hudS").textContent = "Via!"; $("hudS").className = "s"; $("depthMark").hidden = true;
     setPhase("rec"); if (S.voice) say("Via");
@@ -772,7 +926,7 @@ function startCountdown(){
 }
 
 function stopRec(){
-  setPhase("ready"); guide(null); gCool = (S.src==="file" ? video.currentTime*1000 : performance.now()) + 3000;
+  setPhase("ready"); guide(null); gCool = (isFile() ? video.currentTime*1000 : performance.now()) + 3000;
   if (S.voice) say(`Fine serie. ${rec.reps.length} ripetizioni`);
   // ricalcolo a posteriori con filtro a fase zero
   refineOffline(rec);
@@ -907,7 +1061,21 @@ $("btnCsvFrames").onclick = () => {
 $("btnNew").onclick = () => { $("sheetReport").hidden = true; $("repN").textContent = "0"; rec = null; setPhase("ready"); guide(S.auto ? "Pronto · alza le braccia per una nuova serie" : "Pronto per una nuova serie · premi Start", "ok"); };
 
 /* ---------------- impostazioni UI ---------------- */
+function roleUI(r){
+  document.querySelectorAll("#segRole button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r===r)));
+  $("fieldCode").hidden = r !== "send";
+  $("selSrc").closest(".field").hidden = r === "monitor";
+  const n = $("roleNote");
+  n.hidden = r === "local";
+  n.textContent = r === "send"
+    ? "Questo iPhone fa solo da telecamera: analisi, dati e report compaiono sul Mac. Il video passa direttamente tra i due dispositivi, sulla stessa rete Wi-Fi."
+    : "Il Mac riceve il video dall'iPhone, fa l'analisi e mostra i dati in grande. Sull'iPhone scegli 'Camera per il Mac' e inserisci il codice che comparirà qui.";
+  $("btnApply").textContent = r === "send" ? "Collega al Mac" : r === "monitor" ? "Attendi iPhone" : (running || stream ? "Applica" : "Avvia camera");
+}
+document.querySelectorAll("#segRole button").forEach(b => b.onclick = () => roleUI(b.dataset.r));
+
 function fillSettings(){
+  roleUI(S.role); $("inCode").value = S.code;
   document.querySelectorAll("#segView button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v===S.view)));
   $("selEx").value=S.ex; $("selSrc").value=S.src; $("inHeight").value=S.height; $("selCd").value=String(S.cd);
   $("inValg").value=S.valg; $("inShift").value=S.shift; $("selModel").value=S.model; $("chkVoice").checked=S.voice; $("chkAuto").checked=S.auto;
@@ -920,11 +1088,15 @@ $("btnApply").onclick = async () => {
   S.view = document.querySelector('#segView button[aria-pressed="true"]').dataset.v;
   S.ex = $("selEx").value; S.src = $("selSrc").value; S.height = $("inHeight").value;
   S.cd = Number($("selCd").value); S.valg = Number($("inValg").value)||10; S.shift = Number($("inShift").value)||10;
-  S.model = $("selModel").value; S.voice = $("chkVoice").checked; S.auto = $("chkAuto").checked; saveS();
+  S.model = $("selModel").value; S.voice = $("chkVoice").checked; S.auto = $("chkAuto").checked;
+  S.role = document.querySelector('#segRole button[aria-pressed="true"]').dataset.r; S.code = String($("inCode").value || "").trim(); saveS();
   $("sheetSettings").hidden = true; buildTiles();
   if (S.voice) say(" "); // sblocca la sintesi vocale su iOS con un gesto
+  if (S.role === "send"){ await startSender(); return; }
+  document.querySelector(".app").classList.remove("sending");
   if (S.model !== prev.model) await loadModel();
-  if (S.src !== prev.src || S.src === "file" || !stream && S.src!=="file") await startSource();
+  const restart = S.role !== prev.role || S.src !== prev.src || isFile() || (S.role === "local" && !stream) || (S.role === "monitor" && !peer);
+  if (restart) await startSource();
   else { base = null; setPhase("setup"); }
   if (!running){ running = true; loop(); }
 };
@@ -932,11 +1104,12 @@ $("btnApply").onclick = async () => {
 /* ---------------- avvio ---------------- */
 buildTiles(); setPhase("setup");
 fillSettings(); $("sheetSettings").hidden = false; // prima schermata: scelta vista
-$("btnApply").textContent = "Avvia camera";
+if (innerWidth < 900) document.querySelector(".app").classList.add("hide-dash");
 loadModel().then(() => { $("loading").textContent = "Modello pronto. Scegli la vista e tocca Avvia camera."; })
   .catch(e => { $("loading").textContent = "Errore nel caricamento del modello: " + e.message; });
 const origApply = $("btnApply").onclick;
-$("btnApply").onclick = async () => { $("btnApply").textContent = "Applica"; await origApply(); };
+$("btnApply").onclick = async () => { await origApply(); };
+roleUI(S.role);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible" && phase!=="setup") keepAwake(); });
 </script>
 </body>
