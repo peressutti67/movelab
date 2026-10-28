@@ -115,7 +115,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:12px;height:3px;vertical-align:middle;margin-right:5px}
 
-.app.sending .dash,.app.sending #btnDash,.app.sending #chipFps{display:none}
+.app.sending .dash,.app.sending #btnDash,.app.sending #chipFps,.app.sending #btnHist,.app.sending #btnAth{display:none}
 .app.sending .actions{top:auto;bottom:calc(64px + env(safe-area-inset-bottom,0px))}
 .app.sending .actions .btn{padding:18px 10px;font-size:18px}
 .code{font:700 clamp(48px,9vw,96px) var(--f-num);letter-spacing:.12em;color:var(--fg);margin:8px 0}
@@ -170,7 +170,8 @@ textarea{font:inherit;resize:vertical}
   .sess .field{margin:0}
 }
 @media (max-width:430px){
-  #chipFps,#chipView{display:none}
+  #chipFps,#chipView,.brand{display:none}
+  .iconbtn{padding:6px 8px}
   .top{gap:6px}
   .chip{font-size:11px;padding:3px 6px}
   .brand{font-size:14px}
@@ -190,12 +191,14 @@ textarea{font:inherit;resize:vertical}
     <span class="chip" id="chipState">AVVIO</span>
     <span class="sp"></span>
     <span class="chip" id="chipFps">-- fps</span>
+    <button class="iconbtn" id="btnHist" aria-label="Storico serie">Storico</button>
     <button class="iconbtn" id="btnAth" aria-label="Atleta e archivio">Atleta</button>
     <button class="iconbtn" id="btnDash" aria-label="Mostra o nascondi i dati">Dati</button>
     <button class="iconbtn" id="btnSettings" aria-label="Impostazioni">Imposta</button>
   </header>
   <div class="actions">
     <button class="btn" id="btnCalib" disabled>Calibra</button>
+    <button class="btn" id="btnPause">Pausa</button>
     <button class="btn primary" id="btnStart" disabled>Start</button>
   </div>
   <div class="hud" id="hud" hidden><div class="n" id="hudN">0</div><div class="s" id="hudS"></div></div>
@@ -237,7 +240,7 @@ textarea{font:inherit;resize:vertical}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.4.3</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.5</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -336,6 +339,18 @@ textarea{font:inherit;resize:vertical}
   </div>
 </div>
 
+<!-- Storico -->
+<div class="sheet" id="sheetHist" hidden>
+  <div class="card" role="dialog" aria-labelledby="histTitle">
+    <h2 id="histTitle">Storico serie</h2>
+    <h3 class="lbl" style="margin:12px 0 8px">Questa sessione</h3>
+    <div id="histNow" class="athlist"></div>
+    <h3 class="lbl" style="margin:20px 0 8px" id="histArchTitle">Archivio</h3>
+    <div id="histArch" class="athlist"></div>
+    <div class="ctrls" style="margin-top:14px"><button class="btn" id="btnHistClose" type="button">Chiudi</button></div>
+  </div>
+</div>
+
 <!-- Report -->
 <div class="sheet" id="sheetReport" hidden>
   <div class="card" role="dialog" aria-labelledby="repTitle">
@@ -359,7 +374,7 @@ textarea{font:inherit;resize:vertical}
       <button class="btn" id="btnCsvReps">CSV ripetizioni</button>
       <button class="btn" id="btnCsvFrames">CSV frame</button>
     </div>
-    <div class="ctrls" style="margin-top:8px"><button class="btn primary" id="btnNew">Nuova serie</button></div>
+    <div class="ctrls" style="margin-top:8px"><button class="btn" id="btnRepClose" type="button">Chiudi</button><button class="btn primary" id="btnNew">Nuova serie</button></div>
   </div>
 </div>
 
@@ -371,7 +386,7 @@ const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
 
 /* ---------------- impostazioni ---------------- */
-const APPV = "0.4.3";
+const APPV = "0.5";
 const DEF = { view:"lateral", ex:"squat", src:"rear", height:"", cd:5, valg:10, shift:10, model:"full", voice:true, auto:true, role:"local", code:"", monCode:"", athFolder:"", load:"", workSide:"bil", video:false };
 let S = { ...DEF };
 try { Object.assign(S, JSON.parse(localStorage.getItem("movelab.settings")||"{}")); } catch(e){}
@@ -533,6 +548,8 @@ function onRemoteCmd(d){
     else toast("Prima serve la calibrazione: resta fermo in piedi nell'inquadratura", "warn");
   }
   else if (d.cmd === "stop"){ if (phase === "rec") stopRec(); }
+  else if (d.cmd === "pause") pauseApp();
+  else if (d.cmd === "resume") resumeApp();
 }
 function lostPhone(){
   if (S.role !== "monitor") return;
@@ -599,7 +616,9 @@ function applyStatus(st){
   $("btnStart").disabled = !(st.ph === "ready" || st.ph === "rec");
   $("btnStart").textContent = st.ph === "rec" ? "Stop" : "Start";
   $("btnStart").className = "btn " + (st.ph === "rec" ? "stop" : "primary");
-  const map = { setup:["INQUADRA","warn"], calib:["CALIBRO","warn"], ready:["PRONTO","ok"], countdown:["VIA TRA…","warn"], rec:["REC","rec"] };
+  $("btnPause").textContent = st.ph === "pause" ? "Riprendi" : "Pausa";
+  $("btnPause").disabled = st.ph === "countdown" || st.ph === "rec";
+  const map = { setup:["INQUADRA","warn"], calib:["CALIBRO","warn"], ready:["PRONTO","ok"], countdown:["VIA TRA…","warn"], rec:["REC","rec"], pause:["PAUSA",""] };
   const [t,c] = map[st.ph] || ["COLLEGATO","ok"]; $("chipState").textContent = t; $("chipState").className = "chip " + c;
   guide(st.g, st.gc);
   const cnt = $("count"); cnt.hidden = !st.cd; cnt.textContent = st.cd || "";
@@ -713,12 +732,15 @@ function metrics(){
 /* ---------------- macchina a stati ---------------- */
 function setPhase(ph){
   phase = ph;
-  const map = { setup:["INQUADRA",""], calib:["CALIBRO","warn"], ready:["PRONTO","ok"], countdown:["VIA TRA…","warn"], rec:["REC","rec"] };
+  const map = { setup:["INQUADRA",""], calib:["CALIBRO","warn"], ready:["PRONTO","ok"], countdown:["VIA TRA…","warn"], rec:["REC","rec"], pause:["PAUSA",""] };
   const [t,c] = map[ph]; const chip = $("chipState"); chip.textContent = t; chip.className = "chip " + c;
-  const big = { setup:"INQUADRATURA", calib:"RESTA FERMO", ready:"PRONTO", countdown:"VIA TRA POCO", rec:"REGISTRAZIONE" }[ph];
+  const big = { setup:"INQUADRATURA", calib:"RESTA FERMO", ready:"PRONTO", countdown:"VIA TRA POCO", rec:"REGISTRAZIONE", pause:"IN PAUSA" }[ph];
   $("bsPh").textContent = big; $("bigStatus").className = "status " + (ph==="ready" ? "ok" : ph==="rec" ? "rec" : "warn");
   if (ph === "rec") $("bsMsg").textContent = "Serie in corso. Per finire: in piedi, alza un braccio oppure STOP.";
   if (ph === "countdown") $("bsMsg").textContent = "Mettiti in posizione.";
+  if (ph === "pause") $("bsMsg").textContent = "Nessuna calibrazione e nessun gesto. Premi RIPRENDI per continuare.";
+  $("btnPause").textContent = ph === "pause" ? "Riprendi" : "Pausa";
+  $("btnPause").disabled = ph === "countdown" || ph === "rec";
   $("btnCalib").disabled = !(ph==="setup" || ph==="ready");
   $("btnStart").disabled = !(ph==="ready" || ph==="rec");
   $("btnStart").textContent = ph==="rec" ? "Stop" : "Start";
@@ -730,15 +752,17 @@ function setPhase(ph){
 let curGuide = { t:"", c:"" };
 function updateBig(){
   const b = $("big"); if (!b) return;
-  const show = phase === "setup" || phase === "calib" || phase === "ready";
+  const show = phase === "setup" || phase === "calib" || phase === "ready" || phase === "pause";
   const reportOpen = !$("sheetReport").hidden;
   if (!show || reportOpen || (phase === "setup" && !curGuide.t)){ b.hidden = true; return; }
   b.hidden = false;
   let t, sTxt, ok = false;
   if (phase === "setup"){ const good = curGuide.c === "ok"; t = good ? "CALIBRAZIONE" : "INQUADRATURA"; sTxt = good ? "Resta fermo in piedi" : curGuide.t; }
   else if (phase === "calib"){ t = "CALIBRAZIONE"; sTxt = "Resta fermo in piedi"; }
+  else if (phase === "pause"){ t = "IN PAUSA"; sTxt = "Nessuna calibrazione e nessun gesto attivo"; }
   else { t = "PRONTO"; ok = true; sTxt = S.auto ? "Alza un braccio sopra la testa oppure premi START" : "Premi START"; }
-  $("bigT").textContent = t; $("bigS").textContent = sTxt; $("bigStart").hidden = phase !== "ready";
+  $("bigT").textContent = t; $("bigS").textContent = sTxt;
+  $("bigStart").hidden = !(phase === "ready" || phase === "pause"); $("bigStart").textContent = phase === "pause" ? "RIPRENDI" : "START";
   b.className = "big" + (ok ? " ok" : "");
 }
 let sayT = null, lastSaid = "", lastSaidAt = 0;
@@ -756,12 +780,13 @@ function speakGuide(text){
 }
 function guide(text, cls){
   if (text && text !== curGuide.t) speakGuide(text);
-  const bm = $("bsMsg"); if (bm) bm.textContent = text || (phase === "rec" ? "Serie in corso. Per finire: in piedi, alza un braccio oppure STOP." : "");
+  const bm = $("bsMsg"); if (bm) bm.textContent = text || (phase === "rec" ? "Serie in corso. Per finire: in piedi, alza un braccio oppure STOP." : phase === "pause" ? "Nessuna calibrazione e nessun gesto. Premi RIPRENDI per continuare." : "");
   curGuide = { t:text||"", c:cls||"" }; updateBig(); const g=$("guide"); if(!text){ g.hidden=true; return; } g.hidden=false; g.textContent=text; g.className="guide "+(cls||""); }
 
 function onNoPose(){ if (phase==="setup"||phase==="calib") guide("Nessuna persona rilevata", "warn"); }
 
 function process(ts){
+  if (phase === "pause") return;
   if (phase === "setup"){
     if (S.view==="lateral") chooseSide();
     const iss = framingIssues();
@@ -1039,7 +1064,7 @@ async function keepAwake(){ try{ wake = await navigator.wakeLock?.request("scree
 
 /* ---------------- pulsanti ---------------- */
 function startCalib(){ calibBuf = []; base = null; lastHipY = null; setPhase("calib"); beep(520,.08); keepAwake(); }
-$("bigStart").onclick = () => $("btnStart").click();
+$("bigStart").onclick = () => (phase === "pause" ? $("btnPause") : $("btnStart")).click();
 $("btnCalib").onclick = () => S.role === "send" ? sendCmd("calib") : startCalib();
 $("btnStart").onclick = () => {
   if (S.role === "send"){ sendCmd(remotePhase === "rec" ? "stop" : "start"); return; }
@@ -1072,6 +1097,8 @@ async function stopRec(){
   R.videoBlob = await stopVideoRec();
   // ricalcolo a posteriori con filtro a fase zero
   refineOffline(R);
+  R.athName = athlete ? `${athlete.cognome} ${athlete.nome}` : "";
+  sessionSeries.push(R);
   showReport(R);
   $("inRpe").value = ""; $("inPain").value = ""; $("inNote").value = ""; $("repSaved").textContent = "Salvataggio…";
   await saveSeries(R);
@@ -1109,7 +1136,7 @@ function refineOffline(R){
 const fmt = (v, d=0) => Number.isFinite(v) ? v.toFixed(d) : "–";
 function showReport(R){
   const reps = R.reps, ms = !!R.height;
-  $("repSub").textContent = `${athlete ? athlete.cognome + " " + athlete.nome + " · " : ""}${EX[R.ex].name}${R.load ? " · " + R.load + " kg" : ""} · vista ${R.view==="lateral" ? "laterale (lato " + (R.side==="l"?"SX":"DX") + ")" : "frontale"} · ${new Date().toLocaleString("it-IT")}`;
+  $("repSub").textContent = `${R.athName ? R.athName + " · " : ""}${EX[R.ex].name}${R.load ? " · " + R.load + " kg" : ""} · vista ${R.view==="lateral" ? "laterale (lato " + (R.side==="l"?"SX":"DX") + ")" : "frontale"} · ${(R.date || new Date()).toLocaleString("it-IT")}`;
   const vKey = ms ? "vMeanMs" : "vMean", vU = ms ? "m/s" : "arto/s";
   const vs = reps.map(r=>r[vKey]).filter(Number.isFinite);
   const best = vs.length ? Math.max(...vs) : NaN, last = vs.length ? vs[vs.length-1] : NaN;
@@ -1343,6 +1370,7 @@ async function saveSeries(R){
     await writeFile(sd, `${pre}.csv`, "﻿" + repsCSV(R));
     await writeFile(sd, `${pre}-frame.csv`, "﻿" + framesCSV(R));
     await writeFile(sd, `${pre}.json`, JSON.stringify(seriesJSON(R), null, 2));
+    await writeFile(sd, `${pre}-dati.json`, JSON.stringify(seriesData(R)));
     R.saved = { sd, pre, path:`Atleti/${athlete.folder}/${sessName}/${pre}` };
     $("repSaved").textContent = `Salvata in ${R.saved.path}`;
     toast(`Serie ${n} salvata`, "");
@@ -1354,7 +1382,10 @@ async function saveNotes(){
   R.pain = $("inPain").value === "" ? null : Number($("inPain").value);
   R.note = $("inNote").value.trim();
   if (!R.saved){ toast("Serie non salvata nell'archivio", "warn"); return; }
-  try{ await writeFile(R.saved.sd, `${R.saved.pre}.json`, JSON.stringify(seriesJSON(R), null, 2)); toast("Note salvate", ""); }
+  try{ await writeFile(R.saved.sd, `${R.saved.pre}.json`, JSON.stringify(seriesJSON(R), null, 2));
+    const d = await readJSON(R.saved.sd, `${R.saved.pre}-dati.json`);
+    if (d){ d.rpe = R.rpe; d.pain = R.pain; d.note = R.note; await writeFile(R.saved.sd, `${R.saved.pre}-dati.json`, JSON.stringify(d)); }
+    toast("Note salvate", ""); }
   catch(e){ toast("Errore: " + e.message, "bad"); }
 }
 
@@ -1414,12 +1445,101 @@ $("btnAthClose").onclick = () => { $("sheetAth").hidden = true; };
 $("athForm").addEventListener("submit", createAthlete);
 $("btnSaveNotes").onclick = saveNotes;
 
+
+/* ---------------- pausa ---------------- */
+function pauseApp(){
+  if (!(phase === "setup" || phase === "calib" || phase === "ready")) return;
+  calibBuf = []; okSince = null; gStart = null; holdFx(0);
+  setPhase("pause"); guide(null);
+}
+function resumeApp(){
+  if (phase !== "pause") return;
+  okSince = null; gCool = performance.now() + 1500;
+  if (base){ setPhase("ready"); guide(S.auto ? "Pronto · alza un braccio o premi START" : "Pronto · premi START", "ok"); }
+  else setPhase("setup");
+}
+$("btnPause").onclick = () => {
+  if (S.role === "send"){ sendCmd(remotePhase === "pause" ? "resume" : "pause"); return; }
+  phase === "pause" ? resumeApp() : pauseApp();
+};
+
+/* ---------------- storico serie ---------------- */
+const sessionSeries = [];   // serie fatte da quando è aperta la pagina
+function compactFrames(F){ return F.map(f => { const o = {}; for (const k in f){ const v = f[k]; o[k] = typeof v === "number" ? Math.round(v*10000)/10000 : v; } return o; }); }
+function seriesData(R){
+  return { versione:APPV, data:R.date.toISOString(), view:R.view, ex:R.ex, side:R.side, height:R.height, load:R.load, workSide:R.workSide,
+    rpe:R.rpe ?? null, pain:R.pain ?? null, note:R.note ?? "", reps:R.reps, frames:compactFrames(R.frames),
+    atleta: athlete ? `${athlete.cognome} ${athlete.nome}` : "" };
+}
+function seriesFromData(d){
+  return { ...d, date:new Date(d.data), athName:d.atleta, frames:d.frames || [], reps:d.reps || [] };
+}
+function histRow(label, sub, onOpen){
+  const b = document.createElement("button"); b.type = "button"; b.className = "athrow";
+  b.innerHTML = "<b></b><span></span>"; b.querySelector("b").textContent = label; b.querySelector("span").textContent = sub;
+  b.onclick = onOpen; return b;
+}
+const fmtTime = d => d.toLocaleTimeString("it-IT", { hour:"2-digit", minute:"2-digit" });
+function seriesSub(R){
+  return [`${R.reps.length} rip.`, EXNAME(R.ex), VIEWNAME(R.view), R.load ? `${R.load} kg` : "", R.workSide && R.workSide !== "bilaterale" ? `lato ${R.workSide}` : ""].filter(Boolean).join(" · ");
+}
+async function openHistory(){
+  $("sheetHist").hidden = false;
+  const cur = $("histNow"); cur.innerHTML = "";
+  if (!sessionSeries.length) cur.innerHTML = `<p class="note">Nessuna serie ancora in questa sessione.</p>`;
+  [...sessionSeries].reverse().forEach((R, i) => cur.appendChild(histRow(
+    `Serie ${sessionSeries.length - i} · ${fmtTime(R.date)}${R.athName ? " · " + R.athName : ""}`, seriesSub(R),
+    () => { $("sheetHist").hidden = true; openReport(R); })));
+  const arch = $("histArch"); arch.innerHTML = "";
+  $("histArchTitle").textContent = athlete ? `Archivio di ${athlete.cognome} ${athlete.nome}` : "Archivio";
+  if (!athDir){ arch.innerHTML = `<p class="note">${FS_OK ? "Scegli un atleta (pulsante Atleta) per vedere le sue sessioni salvate." : "L'archivio è disponibile sul Mac con Google Chrome."}</p>`; return; }
+  arch.innerHTML = `<p class="note">Caricamento…</p>`;
+  const sessions = [];
+  try{
+    for await (const [name, h] of athDir.entries()){
+      if (h.kind !== "directory") continue;
+      const items = [];
+      for await (const [fn, fh] of h.entries()){
+        const m = fn.match(/^serie-(\d+)\.json$/); if (!m) continue;
+        try{ const j = JSON.parse(await (await fh.getFile()).text()); items.push({ n:+m[1], j, dir:h }); }catch(e){}
+      }
+      if (items.length) sessions.push({ name, items:items.sort((a, b) => a.n - b.n) });
+    }
+  }catch(e){ arch.innerHTML = `<p class="note">Impossibile leggere l'archivio: ${e.message}</p>`; return; }
+  sessions.sort((a, b) => b.name.localeCompare(a.name));
+  arch.innerHTML = sessions.length ? "" : `<p class="note">Nessuna serie salvata per questo atleta.</p>`;
+  for (const s of sessions){
+    const h = document.createElement("div"); h.className = "lbl"; h.style.margin = "12px 0 6px"; h.textContent = s.name; arch.appendChild(h);
+    for (const it of s.items){
+      const d = new Date(it.j.data);
+      arch.appendChild(histRow(`Serie ${it.n} · ${fmtTime(d)}`,
+        [`${it.j.ripetizioni} rip.`, it.j.carico_kg ? `${it.j.carico_kg} kg` : "", it.j.lato_lavoro && it.j.lato_lavoro !== "bilaterale" ? `lato ${it.j.lato_lavoro}` : "",
+         it.j.rpe != null ? `RPE ${it.j.rpe}` : "", it.j.dolore != null ? `dolore ${it.j.dolore}` : ""].filter(Boolean).join(" · "),
+        async () => {
+          const d2 = await readJSON(it.dir, `serie-${it.n}-dati.json`);
+          if (!d2){ toast("Dati dettagliati non disponibili per questa serie (salvata con una versione precedente). Apri il CSV dal Finder.", "warn"); return; }
+          const R = seriesFromData(d2); R.saved = { sd:it.dir, pre:`serie-${it.n}`, path:`Atleti/${athlete.folder}/${s.name}/serie-${it.n}` };
+          $("sheetHist").hidden = true; openReport(R);
+        }));
+    }
+  }
+}
+function openReport(R){
+  rec = R; showReport(R);
+  $("inRpe").value = R.rpe ?? ""; $("inPain").value = R.pain ?? ""; $("inNote").value = R.note ?? "";
+  $("repSaved").textContent = R.saved ? `Salvata in ${R.saved.path}` : "Serie non salvata nell'archivio.";
+}
+$("btnHist").onclick = openHistory;
+$("btnHistClose").onclick = () => { $("sheetHist").hidden = true; };
+$("btnRepClose").onclick = () => { $("sheetReport").hidden = true; updateBig(); };
+
 $("inLoad").value = S.load; $("selSide").value = S.workSide;
 $("inLoad").addEventListener("change", () => { S.load = $("inLoad").value; saveS(); });
 $("selSide").addEventListener("change", () => { S.workSide = $("selSide").value; saveS(); });
 restoreAthlete();
 if (location.hash === "#selftest") window.__ml = { listAthletes, selectAthlete, saveSeries, athletesDir, writeFile, readJSON, showReport, ghostIssue,
-  useOPFS: async () => { rootDir = await navigator.storage.getDirectory(); }, setRec: r => { rec = r; }, state: () => ({ athlete, S }) };
+  useOPFS: async () => { rootDir = await navigator.storage.getDirectory(); }, setRec: r => { rec = r; }, state: () => ({ athlete, S }),
+  sessionSeries, openHistory, pauseApp, resumeApp, setPhase, phase: () => phase };
 
 /* ---------------- impostazioni UI ---------------- */
 function roleUI(r){
