@@ -140,6 +140,13 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
   .toast{font-size:20px}
 }
 .status{display:none}
+.stage .guide{display:none}
+.big{position:absolute;z-index:5;left:0;right:0;top:calc(96px + env(safe-area-inset-top,0px));display:grid;justify-items:center;gap:6px;padding:18px max(16px,env(safe-area-inset-left,0px));background:rgba(5,8,11,.62);text-align:center;border-block:3px solid var(--warn)}
+.big.ok{border-color:var(--ok)}
+.big .t{font:700 clamp(44px,11vw,130px)/1 var(--f-num);letter-spacing:.02em;color:var(--warn)}
+.big.ok .t{color:var(--ok)}
+.big .s{font-size:clamp(18px,3.2vw,34px);line-height:1.25;max-width:28ch}
+.big .btn{flex:none;min-width:min(320px,80%);font-size:clamp(22px,3vw,36px);padding:16px 40px;margin-top:8px}
 @media (min-width:900px) and (orientation:landscape) and (pointer:fine){
   .status{display:block;border-radius:10px;padding:14px 16px;background:var(--panel-2);border-left:6px solid var(--muted)}
   .status .ph{font:700 40px/1 var(--f-num);letter-spacing:.03em}
@@ -189,6 +196,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
     <div class="count" id="count" hidden></div>
     <div class="toast" id="toast" hidden></div>
     <div class="hold" id="hold"></div>
+    <div class="big" id="big" hidden><div class="t" id="bigT"></div><div class="s" id="bigS"></div><button class="btn primary" id="bigStart" hidden>START</button></div>
   </main>
 
   <section class="dash" id="dash">
@@ -214,7 +222,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.4</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.5</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -270,10 +278,10 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
       </div>
       <div class="field"><span class="lbl">Feedback</span>
         <label class="check"><input type="checkbox" id="chkVoice" checked> Voce conta ripetizioni</label>
-        <label class="check"><input type="checkbox" id="chkAuto" checked> Mani libere (braccia in alto)</label>
+        <label class="check"><input type="checkbox" id="chkAuto" checked> Mani libere (braccio alzato)</label>
       </div>
     </div>
-    <p class="note"><b>Mani libere:</b> quando sei inquadrato il sistema si calibra da solo (resta fermo in piedi). Poi alza entrambe le braccia sopra la testa per 1 secondo: parte il countdown. A fine serie, in piedi, alza di nuovo le braccia per fermare e vedere il report; rialzale per una nuova serie.</p>
+    <p class="note"><b>Mani libere:</b> quando sei inquadrato il sistema si calibra da solo (resta fermo in piedi). Quando compare PRONTO, alza un braccio sopra la testa per 1 secondo oppure premi START: parte il countdown. A fine serie, in piedi, rialza il braccio o premi STOP per vedere il report.</p>
     <p class="note">Posiziona il telefono fermo su treppiede a 3–5 m, all'altezza delle anche, perpendicolare al piano scelto. Atleta interamente in inquadratura, abbigliamento aderente, luce frontale. Le soglie sono indicative e vanno adattate al tuo protocollo.</p>
     <div class="ctrls"><button class="btn primary" id="btnApply">Applica</button></div>
   </div>
@@ -453,7 +461,7 @@ function startReceiver(){
     c.on("stream", st => {
       video.srcObject = st; video.play().catch(()=>{});
       $("loading").hidden = true; lastTs = -1; resetFilters(); base = null; setPhase("setup");
-      toast("iPhone collegato", ""); if (S.voice) say("iPhone collegato");
+      toast("iPhone collegato", "");
       if (!running){ running = true; loop(); }
     });
     c.on("close", lostPhone);
@@ -529,7 +537,7 @@ let remotePhase = "setup";
 function sendCmd(cmd){ try{ if (conn?.open) conn.send({ cmd }); else toast("Non collegato al Mac", "warn"); }catch(e){} }
 function applyStatus(st){
   if (!st) return;
-  remotePhase = st.ph;
+  remotePhase = st.ph; phase = st.ph;
   $("btnCalib").disabled = !(st.ph === "setup" || st.ph === "ready");
   $("btnStart").disabled = !(st.ph === "ready" || st.ph === "rec");
   $("btnStart").textContent = st.ph === "rec" ? "Stop" : "Start";
@@ -583,7 +591,7 @@ function framingIssues(){
   }
   const top = pts[0].y, bot = Math.max(pts[27].y, pts[28].y), fr = (bot-top)/B.h;
   if (fr < 0.40) issues.push("Avvicina il telefono o l'atleta");
-  if (fr > 0.80) issues.push("Allontana il telefono (serve spazio sopra la testa per le braccia)");
+  if (fr > 0.80) issues.push("Allontana il telefono (serve spazio sopra la testa)");
   const torso = dist(mid(pts[11],pts[12]), mid(pts[23],pts[24])) || 1;
   const shSep = Math.abs(pts[11].x - pts[12].x)/torso;
   if (S.view==="lateral" && shSep > 0.5) issues.push("Atleta non di profilo: ruotalo di 90°");
@@ -606,8 +614,7 @@ function armsUp(){
   // braccio alzato: polso sopra la testa oppure gomito sopra la testa (le mani possono uscire dall'inquadratura)
   const armUp = (w, e) => (pts[w].v > 0.3 && pts[w].y < head - 0.05*torso) || (pts[e].v > 0.3 && pts[e].y < head);
   const L = armUp(15, 13), R = armUp(16, 14);
-  if (S.view === "lateral") return L || R;   // di profilo basta un braccio riconosciuto
-  return L && R;
+  return L || R;   // basta un braccio alzato
 }
 function gestureFired(ts){
   if (!S.auto || ts < gCool){ gStart = null; holdFx(0); return false; }
@@ -653,18 +660,33 @@ function setPhase(ph){
   const [t,c] = map[ph]; const chip = $("chipState"); chip.textContent = t; chip.className = "chip " + c;
   const big = { setup:"INQUADRATURA", calib:"RESTA FERMO", ready:"PRONTO", countdown:"VIA TRA POCO", rec:"REGISTRAZIONE" }[ph];
   $("bsPh").textContent = big; $("bigStatus").className = "status " + (ph==="ready" ? "ok" : ph==="rec" ? "rec" : "warn");
-  if (ph === "rec") $("bsMsg").textContent = "Serie in corso. Per finire: in piedi, alza le braccia oppure Stop.";
+  if (ph === "rec") $("bsMsg").textContent = "Serie in corso. Per finire: in piedi, alza un braccio oppure STOP.";
   if (ph === "countdown") $("bsMsg").textContent = "Mettiti in posizione.";
   $("btnCalib").disabled = !(ph==="setup" || ph==="ready");
   $("btnStart").disabled = !(ph==="ready" || ph==="rec");
   $("btnStart").textContent = ph==="rec" ? "Stop" : "Start";
   $("btnStart").className = "btn " + (ph==="rec" ? "stop" : "primary");
   $("hud").hidden = !(ph==="rec");
+  updateBig();
 }
 
 let curGuide = { t:"", c:"" };
+function updateBig(){
+  const b = $("big"); if (!b) return;
+  const show = phase === "setup" || phase === "calib" || phase === "ready";
+  const reportOpen = !$("sheetReport").hidden;
+  if (!show || reportOpen || (phase === "setup" && !curGuide.t)){ b.hidden = true; return; }
+  b.hidden = false;
+  let t, sTxt, ok = false;
+  if (phase === "setup"){ const good = curGuide.c === "ok"; t = good ? "CALIBRAZIONE" : "INQUADRATURA"; sTxt = good ? "Resta fermo in piedi" : curGuide.t; }
+  else if (phase === "calib"){ t = "CALIBRAZIONE"; sTxt = "Resta fermo in piedi"; }
+  else { t = "PRONTO"; ok = true; sTxt = S.auto ? "Alza un braccio sopra la testa oppure premi START" : "Premi START"; }
+  $("bigT").textContent = t; $("bigS").textContent = sTxt; $("bigStart").hidden = phase !== "ready";
+  b.className = "big" + (ok ? " ok" : "");
+}
 let sayT = null, lastSaid = "", lastSaidAt = 0;
 function speakGuide(text){
+  return; // guida solo a schermo
   clearTimeout(sayT);
   if (!S.voice || S.role !== "monitor" || !text || !(phase === "setup" || phase === "calib")) return;
   sayT = setTimeout(() => {
@@ -677,8 +699,8 @@ function speakGuide(text){
 }
 function guide(text, cls){
   if (text && text !== curGuide.t) speakGuide(text);
-  const bm = $("bsMsg"); if (bm) bm.textContent = text || (phase === "rec" ? "Serie in corso: in piedi alza le braccia o premi Stop per finire" : "");
-  curGuide = { t:text||"", c:cls||"" }; const g=$("guide"); if(!text){ g.hidden=true; return; } g.hidden=false; g.textContent=text; g.className="guide "+(cls||""); }
+  const bm = $("bsMsg"); if (bm) bm.textContent = text || (phase === "rec" ? "Serie in corso. Per finire: in piedi, alza un braccio oppure STOP." : "");
+  curGuide = { t:text||"", c:cls||"" }; updateBig(); const g=$("guide"); if(!text){ g.hidden=true; return; } g.hidden=false; g.textContent=text; g.className="guide "+(cls||""); }
 
 function onNoPose(){ if (phase==="setup"||phase==="calib") guide("Nessuna persona rilevata", "warn"); }
 
@@ -716,8 +738,8 @@ function process(ts){
       function avgM(k){ return calibBuf.reduce((a,c)=>a+(c.m[k]||0),0)/calibBuf.length; }
       lastHipY = null; vel = 0; spark = [];
       setPhase("ready");
-      guide(`Calibrato${S.view==="lateral" ? " · lato " + (side==="l"?"sinistro":"destro") : ""} · ${S.auto ? "alza le braccia per partire" : "premi Start"}`, "ok");
-      beep(880, .12); if (S.voice) say(S.auto ? "Calibrato. Alza le braccia per partire" : "Calibrato");
+      guide(`Calibrato${S.view==="lateral" ? " · lato " + (side==="l"?"sinistro":"destro") : ""} · ${S.auto ? "alza un braccio o premi START" : "premi START"}`, "ok");
+      beep(880, .12); 
     }
     return;
   }
@@ -736,7 +758,7 @@ function process(ts){
 
   if (phase === "ready"){
     if (g){ $("sheetReport").hidden = true; startCountdown(); }
-    else if ($("sheetReport").hidden) guide(S.auto ? "Pronto · alza le braccia sopra la testa per partire" : "Pronto · premi Start", "ok");
+    else if ($("sheetReport").hidden) guide(S.auto ? "Pronto · alza un braccio o premi START" : "Pronto · premi START", "ok");
     // aggiornamento lento della baseline in stazione eretta stabile
     if (Math.abs(m.d) < 0.03 && Math.abs(m.v) < 0.05) base.hipY0 = 0.99*base.hipY0 + 0.01*m.hipY;
   }
@@ -956,6 +978,7 @@ async function keepAwake(){ try{ wake = await navigator.wakeLock?.request("scree
 
 /* ---------------- pulsanti ---------------- */
 function startCalib(){ calibBuf = []; base = null; lastHipY = null; setPhase("calib"); beep(520,.08); keepAwake(); }
+$("bigStart").onclick = () => $("btnStart").click();
 $("btnCalib").onclick = () => S.role === "send" ? sendCmd("calib") : startCalib();
 $("btnStart").onclick = () => {
   if (S.role === "send"){ sendCmd(remotePhase === "rec" ? "stop" : "start"); return; }
@@ -1067,7 +1090,7 @@ function showReport(R){
     reps.map((r,i)=>`<tr>${cols.map(([,k,f])=>{ const v = k==="i" ? i+1 : r[k]; return `<td class="${cellCls(k,v)}">${f ? f(v) : (typeof v==="number" ? fmt(v) : v)}</td>`; }).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}">Nessuna ripetizione completa rilevata.</td></tr>`
   }</tbody>`;
 
-  $("sheetReport").hidden = false;
+  $("sheetReport").hidden = false; updateBig();
   requestAnimationFrame(() => drawReportChart(R));
 }
 
@@ -1112,7 +1135,7 @@ $("btnCsvFrames").onclick = () => {
   const R = rec; if (!R?.frames.length) return; const keys = Object.keys(R.frames[0]);
   saveFile(`movelab_frame_${stamp()}.csv`, csv([keys, ...R.frames.map(f=>keys.map(k=>f[k]))]));
 };
-$("btnNew").onclick = () => { $("sheetReport").hidden = true; $("repN").textContent = "0"; rec = null; setPhase("ready"); guide(S.auto ? "Pronto · alza le braccia per una nuova serie" : "Pronto per una nuova serie · premi Start", "ok"); };
+$("btnNew").onclick = () => { $("sheetReport").hidden = true; $("repN").textContent = "0"; rec = null; setPhase("ready"); guide(S.auto ? "Pronto · alza un braccio o premi START" : "Pronto per una nuova serie · premi Start", "ok"); };
 
 /* ---------------- impostazioni UI ---------------- */
 function roleUI(r){
