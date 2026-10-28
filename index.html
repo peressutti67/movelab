@@ -237,7 +237,7 @@ textarea{font:inherit;resize:vertical}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.4.1</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.4.2</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -371,7 +371,7 @@ const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
 
 /* ---------------- impostazioni ---------------- */
-const APPV = "0.4.1";
+const APPV = "0.4.2";
 const DEF = { view:"lateral", ex:"squat", src:"rear", height:"", cd:5, valg:10, shift:10, model:"full", voice:true, auto:true, role:"local", code:"", monCode:"", athFolder:"", load:"", workSide:"bil", video:false };
 let S = { ...DEF };
 try { Object.assign(S, JSON.parse(localStorage.getItem("movelab.settings")||"{}")); } catch(e){}
@@ -1467,11 +1467,19 @@ $("btnApply").onclick = async () => {
 buildTiles(); setPhase("setup");
 fillSettings(); $("sheetSettings").hidden = false; // prima schermata: scelta vista
 if (innerWidth < 900) document.querySelector(".app").classList.add("hide-dash");
-loadModel().then(() => { $("loading").textContent = "Modello pronto. Scegli la vista e tocca Avvia camera."; })
+loadModel().then(() => { if (S.role === "local" && !stream) $("loading").textContent = "Modello pronto. Scegli la vista e tocca Avvia camera."; })
   .catch(e => { $("loading").textContent = "Errore nel caricamento del modello: " + e.message; });
 const origApply = $("btnApply").onclick;
 $("btnApply").onclick = async () => { await origApply(); };
+// collegamenti diretti: .../movelab/#camera (iPhone) e .../movelab/#mac (Mac)
+const hashRole = { "#camera":"send", "#mac":"monitor" }[location.hash];
+if (hashRole && S.role !== hashRole){ S.role = hashRole; saveS(); fillSettings(); }
 roleUI(S.role);
+// avvio automatico: l'iPhone-camera si collega da solo al Mac, il Mac si mette in attesa
+if ((S.role === "send" && /^\d{4}$/.test(S.code)) || S.role === "monitor"){
+  $("sheetSettings").hidden = true;
+  setTimeout(() => $("btnApply").click(), 0);
+}
 document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible" && phase!=="setup") keepAwake(); });
 </script>
 </body>
