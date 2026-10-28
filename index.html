@@ -115,7 +115,9 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:12px;height:3px;vertical-align:middle;margin-right:5px}
 
-.app.sending .dash,.app.sending .actions,.app.sending #btnDash,.app.sending #chipFps{display:none}
+.app.sending .dash,.app.sending #btnDash,.app.sending #chipFps{display:none}
+.app.sending .actions{top:auto;bottom:calc(64px + env(safe-area-inset-bottom,0px))}
+.app.sending .actions .btn{padding:18px 10px;font-size:18px}
 .code{font:700 clamp(48px,9vw,96px) var(--f-num);letter-spacing:.12em;color:var(--fg);margin:8px 0}
 @media (min-width:900px) and (orientation:landscape) and (pointer:fine){
   .stage{right:400px}
@@ -199,7 +201,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.1</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.2</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -443,7 +445,16 @@ function startReceiver(){
     });
     c.on("close", lostPhone);
   });
-  peer.on("connection", c => { conn = c; c.on("close", lostPhone); });
+  peer.on("connection", c => { conn = c; c.on("close", lostPhone); c.on("data", onRemoteCmd); });
+}
+function onRemoteCmd(d){
+  if (!d || !d.cmd) return;
+  if (d.cmd === "calib"){ if (phase === "setup" || phase === "ready") startCalib(); }
+  else if (d.cmd === "start"){
+    if (phase === "ready"){ $("sheetReport").hidden = true; startCountdown(); }
+    else toast("Prima serve la calibrazione: resta fermo in piedi nell'inquadratura", "warn");
+  }
+  else if (d.cmd === "stop"){ if (phase === "rec") stopRec(); }
 }
 function lostPhone(){
   if (S.role !== "monitor") return;
@@ -501,8 +512,15 @@ function connectToMac(){
     else retry("Errore di collegamento (" + e.type + "). Riprovo…");
   });
 }
+let remotePhase = "setup";
+function sendCmd(cmd){ try{ if (conn?.open) conn.send({ cmd }); else toast("Non collegato al Mac", "warn"); }catch(e){} }
 function applyStatus(st){
   if (!st) return;
+  remotePhase = st.ph;
+  $("btnCalib").disabled = !(st.ph === "setup" || st.ph === "ready");
+  $("btnStart").disabled = !(st.ph === "ready" || st.ph === "rec");
+  $("btnStart").textContent = st.ph === "rec" ? "Stop" : "Start";
+  $("btnStart").className = "btn " + (st.ph === "rec" ? "stop" : "primary");
   const map = { setup:["INQUADRA","warn"], calib:["CALIBRO","warn"], ready:["PRONTO","ok"], countdown:["VIA TRA…","warn"], rec:["REC","rec"] };
   const [t,c] = map[st.ph] || ["COLLEGATO","ok"]; $("chipState").textContent = t; $("chipState").className = "chip " + c;
   guide(st.g, st.gc);
@@ -903,8 +921,9 @@ async function keepAwake(){ try{ wake = await navigator.wakeLock?.request("scree
 
 /* ---------------- pulsanti ---------------- */
 function startCalib(){ calibBuf = []; base = null; lastHipY = null; setPhase("calib"); beep(520,.08); keepAwake(); }
-$("btnCalib").onclick = startCalib;
+$("btnCalib").onclick = () => S.role === "send" ? sendCmd("calib") : startCalib();
 $("btnStart").onclick = () => {
+  if (S.role === "send"){ sendCmd(remotePhase === "rec" ? "stop" : "start"); return; }
   if (phase === "rec"){ stopRec(); return; }
   if (phase !== "ready") return;
   startCountdown();
