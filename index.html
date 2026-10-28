@@ -117,7 +117,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 
 .app.sending .dash,.app.sending .actions,.app.sending #btnDash,.app.sending #chipFps{display:none}
 .code{font:700 clamp(48px,9vw,96px) var(--f-num);letter-spacing:.12em;color:var(--fg);margin:8px 0}
-@media (min-width:900px) and (orientation:landscape){
+@media (min-width:900px) and (orientation:landscape) and (pointer:fine){
   .stage{right:400px}
   .stage video,.stage canvas{object-fit:contain}
   .top{right:400px}
@@ -199,7 +199,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.1</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -209,8 +209,8 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
         <button type="button" data-r="monitor" aria-pressed="false">Mac: ricevi iPhone</button>
       </div>
     </div>
-    <div class="field" id="fieldCode" hidden><label for="inCode">Codice mostrato sul Mac</label>
-      <input type="number" id="inCode" inputmode="numeric" placeholder="es. 4821">
+    <div class="field" id="fieldCode"><label for="inCode">Codice mostrato sul Mac (serve solo per "Camera per il Mac")</label>
+      <input type="text" id="inCode" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="es. 4821" style="font-size:22px;letter-spacing:.2em">
     </div>
     <p class="note" id="roleNote" hidden></p>
     <div class="field"><span class="lbl">Vista</span>
@@ -1063,7 +1063,7 @@ $("btnNew").onclick = () => { $("sheetReport").hidden = true; $("repN").textCont
 /* ---------------- impostazioni UI ---------------- */
 function roleUI(r){
   document.querySelectorAll("#segRole button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r===r)));
-  $("fieldCode").hidden = r !== "send";
+  $("fieldCode").hidden = r === "monitor";
   $("selSrc").closest(".field").hidden = r === "monitor";
   const n = $("roleNote");
   n.hidden = r === "local";
