@@ -237,7 +237,7 @@ textarea{font:inherit;resize:vertical}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.4.2</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.4.3</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -371,7 +371,7 @@ const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
 
 /* ---------------- impostazioni ---------------- */
-const APPV = "0.4.2";
+const APPV = "0.4.3";
 const DEF = { view:"lateral", ex:"squat", src:"rear", height:"", cd:5, valg:10, shift:10, model:"full", voice:true, auto:true, role:"local", code:"", monCode:"", athFolder:"", load:"", workSide:"bil", video:false };
 let S = { ...DEF };
 try { Object.assign(S, JSON.parse(localStorage.getItem("movelab.settings")||"{}")); } catch(e){}
@@ -1480,7 +1480,21 @@ if ((S.role === "send" && /^\d{4}$/.test(S.code)) || S.role === "monitor"){
   $("sheetSettings").hidden = true;
   setTimeout(() => $("btnApply").click(), 0);
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible" && phase!=="setup") keepAwake(); });
+/* aggiornamento automatico: se su GitHub c'è una versione più recente, ricarica senza cache */
+async function checkUpdate(){
+  if (phase === "rec" || phase === "countdown") return;
+  try{
+    const r = await fetch("version.json?t=" + Date.now(), { cache:"no-store" });
+    const v = (await r.json()).version;
+    if (v && v !== APPV){
+      const u = new URL(location.href); u.searchParams.set("v", v);
+      toast(`Aggiorno MoveLab alla versione ${v}…`, "");
+      setTimeout(() => location.replace(u.toString()), 1200);
+    }
+  }catch(e){}
+}
+checkUpdate(); setInterval(checkUpdate, 60000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible"){ checkUpdate(); if (phase!=="setup") keepAwake(); } });
 </script>
 </body>
 </html>
