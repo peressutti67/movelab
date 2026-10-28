@@ -201,7 +201,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.2</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.3</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -588,16 +588,19 @@ let gStart = null, gCool = 0, okSince = null, lastM = null;
 function armsUp(){
   if (!pts) return false;
   const torso = dist(mid(pts[11],pts[12]), mid(pts[23],pts[24])) || 1;
-  const head = pts[0].y - 0.12*torso;
-  const up = i => pts[i].v > 0.5 && pts[i].y < head;
-  if (S.view === "lateral"){ const near = (base?.side || side) === "l" ? 15 : 16; return up(near) && (up(near===15?16:15) || pts[near===15?16:15].v < 0.5); }
-  return up(15) && up(16);
+  const shY = Math.min(pts[11].y, pts[12].y);
+  const head = (pts[0].v > 0.4 ? pts[0].y : shY - 0.35*torso);
+  // braccio alzato: polso sopra la testa oppure gomito sopra la testa (le mani possono uscire dall'inquadratura)
+  const armUp = (w, e) => (pts[w].v > 0.3 && pts[w].y < head - 0.05*torso) || (pts[e].v > 0.3 && pts[e].y < head);
+  const L = armUp(15, 13), R = armUp(16, 14);
+  if (S.view === "lateral") return L || R;   // di profilo basta un braccio riconosciuto
+  return L && R;
 }
 function gestureFired(ts){
   if (!S.auto || ts < gCool){ gStart = null; holdFx(0); return false; }
   if (!armsUp()){ gStart = null; holdFx(0); return false; }
   if (gStart === null) gStart = ts;
-  const k = Math.min(1, (ts - gStart)/800); holdFx(k);
+  const k = Math.min(1, (ts - gStart)/700); holdFx(k);
   if (k >= 1){ gStart = null; gCool = ts + 2500; holdFx(0); return true; }
   return false;
 }
