@@ -237,7 +237,7 @@ textarea{font:inherit;resize:vertical}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.4</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.4.1</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -294,7 +294,6 @@ textarea{font:inherit;resize:vertical}
       <div class="field"><span class="lbl">Feedback</span>
         <label class="check"><input type="checkbox" id="chkVoice" checked> Voce conta ripetizioni</label>
         <label class="check"><input type="checkbox" id="chkAuto" checked> Mani libere (braccio alzato)</label>
-        <label class="check"><input type="checkbox" id="chkVideo"> Salva anche il video della serie</label>
       </div>
     </div>
     <p class="note"><b>Mani libere:</b> quando sei inquadrato il sistema si calibra da solo (resta fermo in piedi). Quando compare PRONTO, alza un braccio sopra la testa per 1 secondo oppure premi START: parte il countdown. A fine serie, in piedi, rialza il braccio o premi STOP per vedere il report.</p>
@@ -372,7 +371,7 @@ const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
 
 /* ---------------- impostazioni ---------------- */
-const APPV = "0.4";
+const APPV = "0.4.1";
 const DEF = { view:"lateral", ex:"squat", src:"rear", height:"", cd:5, valg:10, shift:10, model:"full", voice:true, auto:true, role:"local", code:"", monCode:"", athFolder:"", load:"", workSide:"bil", video:false };
 let S = { ...DEF };
 try { Object.assign(S, JSON.parse(localStorage.getItem("movelab.settings")||"{}")); } catch(e){}
@@ -1440,7 +1439,7 @@ function fillSettings(){
   roleUI(S.role); $("inCode").value = S.code;
   document.querySelectorAll("#segView button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v===S.view)));
   $("selEx").value=S.ex; $("selSrc").value=S.src; $("inHeight").value=S.height; $("selCd").value=String(S.cd);
-  $("inValg").value=S.valg; $("inShift").value=S.shift; $("selModel").value=S.model; $("chkVoice").checked=S.voice; $("chkAuto").checked=S.auto; $("chkVideo").checked=S.video;
+  $("inValg").value=S.valg; $("inShift").value=S.shift; $("selModel").value=S.model; $("chkVoice").checked=S.voice; $("chkAuto").checked=S.auto;
 }
 document.querySelectorAll("#segView button").forEach(b => b.onclick = () => document.querySelectorAll("#segView button").forEach(x => x.setAttribute("aria-pressed", String(x===b))));
 $("btnDash").onclick = () => document.querySelector(".app").classList.toggle("hide-dash");
@@ -1450,7 +1449,7 @@ $("btnApply").onclick = async () => {
   S.view = document.querySelector('#segView button[aria-pressed="true"]').dataset.v;
   S.ex = $("selEx").value; S.src = $("selSrc").value; S.height = $("inHeight").value;
   S.cd = Number($("selCd").value); S.valg = Number($("inValg").value)||10; S.shift = Number($("inShift").value)||10;
-  S.model = $("selModel").value; S.voice = $("chkVoice").checked; S.auto = $("chkAuto").checked; S.video = $("chkVideo").checked;
+  S.model = $("selModel").value; S.voice = $("chkVoice").checked; S.auto = $("chkAuto").checked; S.video = false;
   S.role = document.querySelector('#segRole button[aria-pressed="true"]').dataset.r; S.code = String($("inCode").value || "").trim(); saveS();
   $("sheetSettings").hidden = true; buildTiles();
   if (S.voice) say(" "); // sblocca la sintesi vocale su iOS con un gesto
