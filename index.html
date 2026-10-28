@@ -139,6 +139,18 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
   .guide{font-size:20px;padding:12px 18px}
   .toast{font-size:20px}
 }
+.status{display:none}
+@media (min-width:900px) and (orientation:landscape) and (pointer:fine){
+  .status{display:block;border-radius:10px;padding:14px 16px;background:var(--panel-2);border-left:6px solid var(--muted)}
+  .status .ph{font:700 40px/1 var(--f-num);letter-spacing:.03em}
+  .status .msg{font-size:22px;line-height:1.3;margin-top:8px;min-height:2.6em}
+  .status.ok{border-left-color:var(--ok)} .status.ok .ph{color:var(--ok)}
+  .status.warn{border-left-color:var(--warn)} .status.warn .ph{color:var(--warn)}
+  .status.rec{border-left-color:var(--bad)} .status.rec .ph{color:var(--bad)}
+  .gbar{height:8px;border-radius:4px;background:var(--bg);margin-top:10px;overflow:hidden}
+  .gbar div{height:100%;width:0;background:var(--accent)}
+  .stage .guide{display:none}
+}
 @media (max-width:430px){
   #chipFps{display:none}
   .top{gap:6px}
@@ -180,6 +192,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
   </main>
 
   <section class="dash" id="dash">
+    <div class="status" id="bigStatus"><div class="ph" id="bsPh">INQUADRATURA</div><div class="msg" id="bsMsg">In attesa…</div><div class="gbar"><div id="bsHold"></div></div></div>
     <div class="row">
       <div class="reps"><div class="n" id="repN">0</div><div class="lbl">Ripet.</div></div>
       <div class="tiles" id="tiles"></div>
@@ -201,7 +214,7 @@ td.w{color:var(--warn)} td.b{color:var(--bad)}
 <!-- Impostazioni -->
 <div class="sheet" id="sheetSettings" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
-    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.3</span></h2>
+    <h2 id="setTitle">Impostazione sessione <span class="chip" style="vertical-align:middle">v0.3.4</span></h2>
     <p class="sub">Scegli il piano di analisi. Con una camera si misura in modo valido solo il piano perpendicolare all'obiettivo.</p>
 
     <div class="field"><span class="lbl">Questo dispositivo</span>
@@ -604,7 +617,7 @@ function gestureFired(ts){
   if (k >= 1){ gStart = null; gCool = ts + 2500; holdFx(0); return true; }
   return false;
 }
-function holdFx(k){ $("hold").style.borderWidth = k ? `${Math.round(4 + k*10)}px` : "0"; }
+function holdFx(k){ $("hold").style.borderWidth = k ? `${Math.round(4 + k*10)}px` : "0"; $("bsHold").style.width = Math.round(k*100) + "%"; }
 
 /* ---------------- metriche istantanee ---------------- */
 function metrics(){
@@ -638,6 +651,10 @@ function setPhase(ph){
   phase = ph;
   const map = { setup:["INQUADRA",""], calib:["CALIBRO","warn"], ready:["PRONTO","ok"], countdown:["VIA TRA…","warn"], rec:["REC","rec"] };
   const [t,c] = map[ph]; const chip = $("chipState"); chip.textContent = t; chip.className = "chip " + c;
+  const big = { setup:"INQUADRATURA", calib:"RESTA FERMO", ready:"PRONTO", countdown:"VIA TRA POCO", rec:"REGISTRAZIONE" }[ph];
+  $("bsPh").textContent = big; $("bigStatus").className = "status " + (ph==="ready" ? "ok" : ph==="rec" ? "rec" : "warn");
+  if (ph === "rec") $("bsMsg").textContent = "Serie in corso. Per finire: in piedi, alza le braccia oppure Stop.";
+  if (ph === "countdown") $("bsMsg").textContent = "Mettiti in posizione.";
   $("btnCalib").disabled = !(ph==="setup" || ph==="ready");
   $("btnStart").disabled = !(ph==="ready" || ph==="rec");
   $("btnStart").textContent = ph==="rec" ? "Stop" : "Start";
@@ -646,7 +663,22 @@ function setPhase(ph){
 }
 
 let curGuide = { t:"", c:"" };
-function guide(text, cls){ curGuide = { t:text||"", c:cls||"" }; const g=$("guide"); if(!text){ g.hidden=true; return; } g.hidden=false; g.textContent=text; g.className="guide "+(cls||""); }
+let sayT = null, lastSaid = "", lastSaidAt = 0;
+function speakGuide(text){
+  clearTimeout(sayT);
+  if (!S.voice || S.role !== "monitor" || !text || !(phase === "setup" || phase === "calib")) return;
+  sayT = setTimeout(() => {
+    if (curGuide.t !== text) return;
+    const now = performance.now();
+    const short = text.split("·")[0].replace(/\(.*?\)/g, "").trim();
+    if (short === lastSaid && now - lastSaidAt < 8000) return;
+    lastSaid = short; lastSaidAt = now; say(short);
+  }, 1500);
+}
+function guide(text, cls){
+  if (text && text !== curGuide.t) speakGuide(text);
+  const bm = $("bsMsg"); if (bm) bm.textContent = text || (phase === "rec" ? "Serie in corso: in piedi alza le braccia o premi Stop per finire" : "");
+  curGuide = { t:text||"", c:cls||"" }; const g=$("guide"); if(!text){ g.hidden=true; return; } g.hidden=false; g.textContent=text; g.className="guide "+(cls||""); }
 
 function onNoPose(){ if (phase==="setup"||phase==="calib") guide("Nessuna persona rilevata", "warn"); }
 
